@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moderated Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Simple scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        /* Custom styles for the admin toggle */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #4f46e5;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #4f46e5;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">Community Discussion</h1>
+            <p class="text-gray-600 mt-2">Comments are moderated and will appear after approval.</p>
+        </header>
+
+        <!-- Admin & User Info Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <!-- Admin Controls -->
+            <div class="bg-white rounded-lg shadow-md p-4 flex items-center justify-between">
+                <div>
+                    <label for="adminToggle" class="font-semibold text-gray-700">Admin View</label>
+                    <p class="text-sm text-gray-500">Toggle to see pending comments.</p>
+                </div>
+                <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                    <input type="checkbox" name="adminToggle" id="adminToggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                    <label for="adminToggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                </div>
+            </div>
+            <!-- Handle Form -->
+            <div class="bg-white rounded-lg shadow-md p-4">
+                 <form id="handle-form">
+                    <label for="handle-input" class="font-semibold text-gray-700">Your Handle</label>
+                    <div class="flex items-center space-x-2 mt-1">
+                        <input type="text" id="handle-input" class="flex-grow p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="Set your display name" required>
+                        <button type="submit" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition">Save</button>
+                    </div>
+                    <p id="handle-status" class="text-sm text-gray-500 mt-2 h-4"></p>
+                </form>
+            </div>
+        </div>
+
+        <!-- User ID Display -->
+        <div class="bg-indigo-100 border-l-4 border-indigo-500 text-indigo-700 p-4 mb-6 rounded-md" role="alert">
+            <p class="font-bold">Your User ID (Private)</p>
+            <p id="userIdDisplay" class="text-sm break-all">Loading...</p>
+        </div>
+
+
+        <!-- Main Content Area -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+            <!-- Approved Comments Column -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-semibold border-b pb-3 mb-4 text-gray-800">Approved Comments</h2>
+                <div id="approved-comments" class="space-y-4 h-96 overflow-y-auto pr-2">
+                    <!-- Approved comments will be dynamically inserted here -->
+                     <p id="no-approved-message" class="text-gray-500 text-center py-8">No approved comments yet. Be the first to post!</p>
+                </div>
+            </div>
+
+            <!-- Pending and Submission Column -->
+            <div>
+                <!-- Pending Comments (Admin Only) -->
+                <div id="pending-container" class="bg-white rounded-lg shadow-md p-6 mb-8 hidden">
+                    <h2 class="text-2xl font-semibold border-b pb-3 mb-4 text-yellow-600">Pending Approval</h2>
+                    <div id="pending-comments" class="space-y-4 h-64 overflow-y-auto pr-2">
+                        <!-- Pending comments will be dynamically inserted here -->
+                        <p id="no-pending-message" class="text-gray-500 text-center py-8">No pending comments.</p>
+                    </div>
+                </div>
+
+                <!-- Comment Submission Form -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-800">Leave a Comment</h2>
+                    <form id="comment-form">
+                        <textarea id="comment-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" rows="4" placeholder="Write your thoughts here..." required></textarea>
+                        <button type="submit" class="w-full mt-4 bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-transform transform hover:scale-105">
+                            Submit for Approval
+                        </button>
+                    </form>
+                    <div id="submission-status" class="mt-4 text-center"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import necessary Firebase functions from the Firebase SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, doc, updateDoc, deleteDoc, serverTimestamp, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Configuration and Initialization ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-chat-app';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // --- State Variables ---
+        let userId = null;
+        let userHandle = 'Anonymous'; // Default handle
+        let isAuthReady = false;
+
+        // --- DOM Element References ---
+        const adminToggle = document.getElementById('adminToggle');
+        const pendingContainer = document.getElementById('pending-container');
+        const approvedCommentsContainer = document.getElementById('approved-comments');
+        const pendingCommentsContainer = document.getElementById('pending-comments');
+        const commentForm = document.getElementById('comment-form');
+        const commentInput = document.getElementById('comment-input');
+        const submissionStatus = document.getElementById('submission-status');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const handleForm = document.getElementById('handle-form');
+        const handleInput = document.getElementById('handle-input');
+        const handleStatus = document.getElementById('handle-status');
+        const noApprovedMessage = document.getElementById('no-approved-message');
+        const noPendingMessage = document.getElementById('no-pending-message');
+
+        // --- Core Functions ---
+
+        /**
+         * Renders comments into a container, displaying the user's handle.
+         */
+        function renderComments(container, comments, isPending = false) {
+            container.innerHTML = '';
+            if (comments.length === 0) {
+                if (isPending) noPendingMessage.classList.remove('hidden');
+                else noApprovedMessage.classList.remove('hidden');
+                return;
+            }
+
+            noPendingMessage.classList.add('hidden');
+            noApprovedMessage.classList.add('hidden');
+            
+            const sortedComments = comments.sort((a, b) => a.timestamp?.seconds - b.timestamp?.seconds);
+
+            sortedComments.forEach(comment => {
+                const commentEl = document.createElement('div');
+                commentEl.className = 'p-4 rounded-lg border';
+                commentEl.classList.add(isPending ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-200');
+
+                const text = document.createElement('p');
+                text.className = 'text-gray-700';
+                text.textContent = comment.text;
+
+                const footer = document.createElement('div');
+                footer.className = 'flex justify-between items-center mt-3 text-xs text-gray-500';
+
+                const author = document.createElement('span');
+                author.className = 'font-semibold text-indigo-600';
+                // Display the handle, or a fallback if it doesn't exist on the comment
+                author.textContent = `By: ${comment.handle || 'Anonymous'}`;
+                author.title = `User ID: ${comment.author}`;
+
+                const timestamp = document.createElement('span');
+                timestamp.textContent = comment.timestamp ? new Date(comment.timestamp.seconds * 1000).toLocaleString() : 'Just now';
+
+                footer.appendChild(author);
+                footer.appendChild(timestamp);
+                commentEl.appendChild(text);
+                commentEl.appendChild(footer);
+
+                if (isPending) {
+                    const actions = document.createElement('div');
+                    actions.className = 'mt-3 flex gap-2';
+                    const approveBtn = document.createElement('button');
+                    approveBtn.textContent = 'Approve';
+                    approveBtn.className = 'approve-btn flex-1 bg-green-500 text-white px-3 py-1 rounded-md text-sm font-semibold hover:bg-green-600 transition';
+                    approveBtn.dataset.id = comment.id;
+                    const rejectBtn = document.createElement('button');
+                    rejectBtn.textContent = 'Reject';
+                    rejectBtn.className = 'reject-btn flex-1 bg-red-500 text-white px-3 py-1 rounded-md text-sm font-semibold hover:bg-red-600 transition';
+                    rejectBtn.dataset.id = comment.id;
+                    actions.appendChild(approveBtn);
+                    actions.appendChild(rejectBtn);
+                    commentEl.appendChild(actions);
+                }
+                container.appendChild(commentEl);
+            });
+        }
+        
+        /**
+         * Fetches the user's saved handle from Firestore.
+         */
+        async function fetchUserHandle() {
+            if (!userId) return;
+            const userDocRef = doc(db, `artifacts/${appId}/public/data/users`, userId);
+            const docSnap = await getDoc(userDocRef);
+
+            if (docSnap.exists()) {
+                userHandle = docSnap.data().handle;
+                handleInput.value = userHandle;
+            } else {
+                 handleInput.value = ''; // Clear if no handle is set
+            }
+        }
+
+
+        /**
+         * Sets up real-time listeners for comments.
+         */
+        function setupCommentListener() {
+            if (!isAuthReady) return;
+            const commentsCollection = collection(db, `artifacts/${appId}/public/data/comments`);
+            const q = query(commentsCollection);
+
+            onSnapshot(q, (querySnapshot) => {
+                const approved = [];
+                const pending = [];
+                querySnapshot.forEach((doc) => {
+                    const commentData = { id: doc.id, ...doc.data() };
+                    if (commentData.status === 'approved') approved.push(commentData);
+                    else if (commentData.status === 'pending') pending.push(commentData);
+                });
+                renderComments(approvedCommentsContainer, approved, false);
+                renderComments(pendingCommentsContainer, pending, true);
+            }, (error) => {
+                console.error("Error fetching comments: ", error);
+                submissionStatus.textContent = "Error: Could not load comments.";
+                submissionStatus.className = 'mt-4 text-center text-red-600';
+            });
+        }
+
+        // --- Event Handlers ---
+
+        /**
+         * Handles saving the user's chosen handle.
+         */
+        async function handleHandleSave(e) {
+            e.preventDefault();
+            if (!isAuthReady || !userId) {
+                handleStatus.textContent = "Authentication not ready.";
+                handleStatus.className = 'text-sm text-red-600 mt-2 h-4';
+                return;
+            }
+            const newHandle = handleInput.value.trim();
+            if (newHandle.length < 3) {
+                handleStatus.textContent = "Handle must be at least 3 characters.";
+                handleStatus.className = 'text-sm text-red-600 mt-2 h-4';
+                return;
+            }
+
+            handleStatus.textContent = "Saving...";
+            handleStatus.className = 'text-sm text-gray-500 mt-2 h-4';
+
+            try {
+                const userDocRef = doc(db, `artifacts/${appId}/public/data/users`, userId);
+                await setDoc(userDocRef, { handle: newHandle });
+                userHandle = newHandle; // Update local state
+                handleStatus.textContent = "Handle saved!";
+                handleStatus.className = 'text-sm text-green-600 mt-2 h-4';
+            } catch (error) {
+                console.error("Error saving handle:", error);
+                handleStatus.textContent = "Error saving handle.";
+                handleStatus.className = 'text-sm text-red-600 mt-2 h-4';
+            } finally {
+                setTimeout(() => { handleStatus.textContent = '' }, 3000);
+            }
+        }
+
+        /**
+         * Handles the submission of a new comment.
+         */
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            if (!isAuthReady || !userId) {
+                submissionStatus.textContent = "Authentication not ready. Please wait.";
+                submissionStatus.className = 'mt-4 text-center text-red-600';
+                return;
+            }
+            const commentText = commentInput.value.trim();
+            if (commentText === '') return;
+
+            try {
+                const commentsCollection = collection(db, `artifacts/${appId}/public/data/comments`);
+                await addDoc(commentsCollection, {
+                    text: commentText,
+                    author: userId,
+                    handle: userHandle, // Attach the current handle to the comment
+                    status: 'pending',
+                    timestamp: serverTimestamp()
+                });
+                commentInput.value = '';
+                submissionStatus.textContent = "Success! Your comment is awaiting approval.";
+                submissionStatus.className = 'mt-4 text-center text-green-600';
+                setTimeout(() => { submissionStatus.textContent = '' }, 3000);
+            } catch (error) {
+                console.error("Error adding document: ", error);
+                submissionStatus.textContent = "Error: Could not submit your comment.";
+                submissionStatus.className = 'mt-4 text-center text-red-600';
+            }
+        }
+
+        /**
+         * Handles clicks on the Approve and Reject buttons.
+         */
+        async function handleAdminActions(e) {
+            const target = e.target;
+            const commentId = target.dataset.id;
+            if (!commentId) return;
+            const commentRef = doc(db, `artifacts/${appId}/public/data/comments`, commentId);
+            try {
+                if (target.classList.contains('approve-btn')) {
+                    await updateDoc(commentRef, { status: 'approved' });
+                } else if (target.classList.contains('reject-btn')) {
+                    await deleteDoc(commentRef);
+                }
+            } catch (error) {
+                 console.error("Error updating/deleting document: ", error);
+                 alert("Failed to perform action. See console for details.");
+            }
+        }
+
+        // --- Initialization on DOM Load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            adminToggle.addEventListener('change', () => {
+                pendingContainer.classList.toggle('hidden', !adminToggle.checked);
+            });
+            handleForm.addEventListener('submit', handleHandleSave);
+            commentForm.addEventListener('submit', handleFormSubmit);
+            pendingCommentsContainer.addEventListener('click', handleAdminActions);
+
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    isAuthReady = true;
+                    userIdDisplay.textContent = userId;
+                    await fetchUserHandle(); // Fetch the user's handle
+                    setupCommentListener(); // Start listening for comments
+                } else {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Firebase sign-in error:", error);
+                        userIdDisplay.textContent = "Authentication failed.";
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
