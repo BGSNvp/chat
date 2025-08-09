@@ -44,13 +44,13 @@
 
         <!-- Admin & User Info Section -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <!-- Admin Controls -->
-            <div id="admin-controls-container" class="bg-white rounded-lg shadow-md p-4 flex items-center justify-between">
+            <!-- Admin Controls (hidden by default) -->
+            <div id="admin-controls-container" class="bg-white rounded-lg shadow-md p-4 flex-col sm:flex-row items-start sm:items-center justify-between hidden">
                 <div>
                     <label for="adminToggle" class="font-semibold text-gray-700">Admin View</label>
                     <p class="text-sm text-gray-500">Toggle to see pending comments.</p>
                 </div>
-                <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in mt-2 sm:mt-0">
                     <input type="checkbox" name="adminToggle" id="adminToggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
                     <label for="adminToggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
                 </div>
@@ -117,6 +117,7 @@
         import { getFirestore, collection, addDoc, onSnapshot, query, doc, updateDoc, deleteDoc, serverTimestamp, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- DOM Element References ---
+        const adminControlsContainer = document.getElementById('admin-controls-container');
         const adminToggle = document.getElementById('adminToggle');
         const pendingContainer = document.getElementById('pending-container');
         const approvedCommentsContainer = document.getElementById('approved-comments');
@@ -155,7 +156,6 @@
                 const commentEl = document.createElement('div');
                 commentEl.className = 'p-4 rounded-lg border';
                 
-                // FIX: Add classes individually instead of as a single string with spaces.
                 if (isPending) {
                     commentEl.classList.add('bg-yellow-50', 'border-yellow-200');
                 } else {
@@ -212,6 +212,20 @@
                 handleInput.value = userHandle;
             } else {
                  handleInput.value = '';
+            }
+        }
+
+        async function checkIfAdmin() {
+            if (!userId) return false;
+            // Try to read a document from the 'admins' collection with the user's ID.
+            // Firestore rules will only allow this if the user is the admin.
+            const adminDocRef = doc(db, 'admins', userId);
+            try {
+                const docSnap = await getDoc(adminDocRef);
+                return docSnap.exists(); // If the doc exists and we could read it, they are an admin.
+            } catch (error) {
+                console.log("User is not an admin.");
+                return false;
             }
         }
 
@@ -315,20 +329,11 @@
         // --- Initialization on DOM Load ---
         document.addEventListener('DOMContentLoaded', () => {
             try {
-                // Initialize Firebase
-                const firebaseConfig = {
-  apiKey: "AIzaSyA3sjRwib5RtLCIeDVqCF-fWKOYATZdn9k",
-  authDomain: "chat-e36f7.firebaseapp.com",
-  projectId: "chat-e36f7",
-  storageBucket: "chat-e36f7.firebasestorage.app",
-  messagingSenderId: "601079310606",
-  appId: "1:601079310606:web:c8c328c88c0b686d688f5f"
-};
+                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Setup Event Listeners
                 adminToggle.addEventListener('change', () => {
                     pendingContainer.classList.toggle('hidden', !adminToggle.checked);
                 });
@@ -336,18 +341,22 @@
                 commentForm.addEventListener('submit', handleFormSubmit);
                 pendingCommentsContainer.addEventListener('click', handleAdminActions);
 
-                // Authentication State Listener
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         userId = user.uid;
                         isAuthReady = true;
                         userIdDisplay.textContent = userId;
-                        // NEW: Log the User ID to the console for easy access
                         console.log("✅ Firebase User ID successfully found:", userId);
+
+                        // Check for admin status and show controls if they are an admin
+                        if (await checkIfAdmin()) {
+                            console.log("User is an admin. Showing admin controls.");
+                            adminControlsContainer.classList.remove('hidden');
+                        }
+
                         await fetchUserHandle();
                         setupCommentListener();
                     } else {
-                        // This block runs if the user is not signed in.
                         console.log("Attempting to sign in anonymously...");
                         try {
                             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -371,3 +380,65 @@
     </script>
 </body>
 </html>
+```
+
+---
+
+### **Step 2: Update Your Firestore Security Rules**
+
+Here are the new security rules. They include a new section for an `admins` collection. This is what allows the new code to securely check for admin status.
+
+Please replace the rules in the `"Firestore Security Rules for Moderated Chat"` document with this new version.
+
+
+```javascript
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+  
+    // Rules for the 'admins' collection
+    // This collection holds a document for each admin.
+    match /admins/{userId} {
+      // Only the user whose ID matches the document ID can read it.
+      // This is how the app securely checks for admin status.
+      allow read: if request.auth.uid == userId;
+      // No one can write to this collection from the app for security.
+      // Admins must be added manually in the Firebase console.
+      allow write: if false;
+    }
+
+    // Path for all public app data
+    match /artifacts/{appId}/public/data/{document=**} {
+        // By default, deny all reads and writes unless specified below.
+        allow read, write: if false;
+    }
+
+    // Rules for the 'users' collection (where handles are stored)
+    match /artifacts/{appId}/public/data/users/{userId} {
+      // Anyone can read any user's handle.
+      allow read: if true;
+      // A user can only create or update their own handle.
+      allow write: if request.auth.uid == userId;
+    }
+
+    // Rules for the 'comments' collection
+    match /artifacts/{appId}/public/data/comments/{commentId} {
+      // Anyone can read comments that have been approved.
+      // The admin can read any comment, including pending ones.
+      allow read: if resource.data.status == 'approved' || (get(/databases/$(database)/documents/admins/$(request.auth.uid))).data.isAdmin == true;
+
+      // Any authenticated user can create a new comment, but it must be
+      // marked as 'pending' and owned by them.
+      allow create: if request.auth != null && 
+                      request.resource.data.status == 'pending' &&
+                      request.resource.data.author == request.auth.uid;
+
+      // Only the admin can update a comment (to approve it).
+      allow update: if (get(/databases/$(database)/documents/admins/$(request.auth.uid))).data.isAdmin == true;
+
+      // Only the admin can delete a comment.
+      allow delete: if (get(/databases/$(database)/documents/admins/$(request.auth.uid))).data.isAdmin == true;
+    }
+  }
+}
