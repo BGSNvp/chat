@@ -116,21 +116,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, query, doc, updateDoc, deleteDoc, serverTimestamp, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- Firebase Configuration and Initialization ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-chat-app';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-
-        // --- State Variables ---
-        let userId = null;
-        let userHandle = 'Anonymous';
-        let isAuthReady = false;
-
         // --- DOM Element References ---
-        const adminControlsContainer = document.getElementById('admin-controls-container');
         const adminToggle = document.getElementById('adminToggle');
         const pendingContainer = document.getElementById('pending-container');
         const approvedCommentsContainer = document.getElementById('approved-comments');
@@ -144,6 +130,12 @@
         const handleStatus = document.getElementById('handle-status');
         const noApprovedMessage = document.getElementById('no-approved-message');
         const noPendingMessage = document.getElementById('no-pending-message');
+
+        // --- State Variables ---
+        let db, auth;
+        let userId = null;
+        let userHandle = 'Anonymous';
+        let isAuthReady = false;
 
         // --- Core Functions ---
         function renderComments(container, comments, isPending = false) {
@@ -205,6 +197,7 @@
         
         async function fetchUserHandle() {
             if (!userId) return;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-chat-app';
             const userDocRef = doc(db, `artifacts/${appId}/public/data/users`, userId);
             const docSnap = await getDoc(userDocRef);
 
@@ -218,6 +211,7 @@
 
         function setupCommentListener() {
             if (!isAuthReady) return;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-chat-app';
             const commentsCollection = collection(db, `artifacts/${appId}/public/data/comments`);
             const q = query(commentsCollection);
 
@@ -251,6 +245,7 @@
 
             handleStatus.textContent = "Saving...";
             try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-chat-app';
                 const userDocRef = doc(db, `artifacts/${appId}/public/data/users`, userId);
                 await setDoc(userDocRef, { handle: newHandle });
                 userHandle = newHandle;
@@ -273,6 +268,7 @@
             if (commentText === '') return;
 
             try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-chat-app';
                 const commentsCollection = collection(db, `artifacts/${appId}/public/data/comments`);
                 await addDoc(commentsCollection, {
                     text: commentText,
@@ -294,6 +290,7 @@
             const target = e.target;
             const commentId = target.dataset.id;
             if (!commentId) return;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-chat-app';
             const commentRef = doc(db, `artifacts/${appId}/public/data/comments`, commentId);
             try {
                 if (target.classList.contains('approve-btn')) {
@@ -311,33 +308,48 @@
 
         // --- Initialization on DOM Load ---
         document.addEventListener('DOMContentLoaded', () => {
-            adminToggle.addEventListener('change', () => {
-                pendingContainer.classList.toggle('hidden', !adminToggle.checked);
-            });
-            handleForm.addEventListener('submit', handleHandleSave);
-            commentForm.addEventListener('submit', handleFormSubmit);
-            pendingCommentsContainer.addEventListener('click', handleAdminActions);
+            try {
+                // Initialize Firebase
+                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
 
-            onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    userId = user.uid;
-                    isAuthReady = true;
-                    userIdDisplay.textContent = userId;
-                    await fetchUserHandle();
-                    setupCommentListener();
-                } else {
-                    try {
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
+                // Setup Event Listeners
+                adminToggle.addEventListener('change', () => {
+                    pendingContainer.classList.toggle('hidden', !adminToggle.checked);
+                });
+                handleForm.addEventListener('submit', handleHandleSave);
+                commentForm.addEventListener('submit', handleFormSubmit);
+                pendingCommentsContainer.addEventListener('click', handleAdminActions);
+
+                // Authentication State Listener
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+                        userIdDisplay.textContent = userId;
+                        await fetchUserHandle();
+                        setupCommentListener();
+                    } else {
+                        try {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (authError) {
+                            console.error("Firebase sign-in error:", authError);
+                            userIdDisplay.textContent = "Authentication failed. Please refresh.";
+                            userIdDisplay.classList.add('text-red-600');
                         }
-                    } catch (error) {
-                        console.error("Firebase sign-in error:", error);
-                        userIdDisplay.textContent = "Authentication failed.";
                     }
-                }
-            });
+                });
+            } catch (e) {
+                console.error("Fatal Error: Could not initialize Firebase. Check configuration.", e);
+                userIdDisplay.textContent = "Error: App configuration failed. Please refresh.";
+                userIdDisplay.classList.add('text-red-600');
+            }
         });
     </script>
 </body>
