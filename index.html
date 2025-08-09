@@ -154,7 +154,13 @@
             sortedComments.forEach(comment => {
                 const commentEl = document.createElement('div');
                 commentEl.className = 'p-4 rounded-lg border';
-                commentEl.classList.add(isPending ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-200');
+                
+                // FIX: Add classes individually instead of as a single string with spaces.
+                if (isPending) {
+                    commentEl.classList.add('bg-yellow-50', 'border-yellow-200');
+                } else {
+                    commentEl.classList.add('bg-gray-50', 'border-gray-200');
+                }
 
                 const text = document.createElement('p');
                 text.className = 'text-gray-700';
@@ -329,9 +335,13 @@
                         userId = user.uid;
                         isAuthReady = true;
                         userIdDisplay.textContent = userId;
+                        // NEW: Log the User ID to the console for easy access
+                        console.log("✅ Firebase User ID successfully found:", userId);
                         await fetchUserHandle();
                         setupCommentListener();
                     } else {
+                        // This block runs if the user is not signed in.
+                        console.log("Attempting to sign in anonymously...");
                         try {
                             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                                 await signInWithCustomToken(auth, __initial_auth_token);
@@ -339,14 +349,14 @@
                                 await signInAnonymously(auth);
                             }
                         } catch (authError) {
-                            console.error("Firebase sign-in error:", authError);
+                            console.error("❌ Firebase sign-in error:", authError);
                             userIdDisplay.textContent = "Authentication failed. Please refresh.";
                             userIdDisplay.classList.add('text-red-600');
                         }
                     }
                 });
             } catch (e) {
-                console.error("Fatal Error: Could not initialize Firebase. Check configuration.", e);
+                console.error("❌ Fatal Error: Could not initialize Firebase. Check configuration.", e);
                 userIdDisplay.textContent = "Error: App configuration failed. Please refresh.";
                 userIdDisplay.classList.add('text-red-600');
             }
