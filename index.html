@@ -316,7 +316,14 @@
         document.addEventListener('DOMContentLoaded', () => {
             try {
                 // Initialize Firebase
-                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                const firebaseConfig = {
+  apiKey: "AIzaSyA3sjRwib5RtLCIeDVqCF-fWKOYATZdn9k",
+  authDomain: "chat-e36f7.firebaseapp.com",
+  projectId: "chat-e36f7",
+  storageBucket: "chat-e36f7.firebasestorage.app",
+  messagingSenderId: "601079310606",
+  appId: "1:601079310606:web:c8c328c88c0b686d688f5f"
+};
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
